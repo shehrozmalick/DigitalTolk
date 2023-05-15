@@ -35,14 +35,12 @@ class BookingController extends Controller
      */
     public function index(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
+        $user = $request->user();
 
-            $response = $this->repository->getUsersJobs($user_id);
-
-        }
-        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
-        {
+        if ($user->hasRole('admin') || $user->hasRole('superadmin')) {
             $response = $this->repository->getAll($request);
+        } else {
+            $response = $this->repository->getUsersJobs($user->id);
         }
 
         return response($response);
@@ -65,9 +63,9 @@ class BookingController extends Controller
      */
     public function store(Request $request)
     {
-        $data = $request->all();
+        $data = $request->validated();
 
-        $response = $this->repository->store($request->__authenticatedUser, $data);
+        $response = $this->repository->store($data);
 
         return response($response);
 
@@ -80,9 +78,9 @@ class BookingController extends Controller
      */
     public function update($id, Request $request)
     {
-        $data = $request->all();
-        $cuser = $request->__authenticatedUser;
-        $response = $this->repository->updateJob($id, array_except($data, ['_token', 'submit']), $cuser);
+        $data = $request->validated();
+
+        $response = $this->repository->updateJob($id, $data);
 
         return response($response);
     }
@@ -107,7 +105,7 @@ class BookingController extends Controller
      */
     public function getHistory(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
+        if ($user_id = $request->get('user_id')) {
 
             $response = $this->repository->getUsersJobsHistory($user_id, $request);
             return response($response);
@@ -190,66 +188,42 @@ class BookingController extends Controller
         $response = $this->repository->getPotentialJobs($user);
 
         return response($response);
+
     }
+
 
     public function distanceFeed(Request $request)
     {
         $data = $request->all();
 
-        if (isset($data['distance']) && $data['distance'] != "") {
-            $distance = $data['distance'];
-        } else {
-            $distance = "";
-        }
-        if (isset($data['time']) && $data['time'] != "") {
-            $time = $data['time'];
-        } else {
-            $time = "";
-        }
-        if (isset($data['jobid']) && $data['jobid'] != "") {
-            $jobid = $data['jobid'];
-        }
+        $distance = $data['distance'] ?? '';
+        $time = $data['time'] ?? '';
+        $jobid = $data['jobid'] ?? '';
 
-        if (isset($data['session_time']) && $data['session_time'] != "") {
-            $session = $data['session_time'];
-        } else {
-            $session = "";
-        }
+        $session = $data['session_time'] ?? '';
+        $flagged = $data['flagged'] ?? 'no';
+        $manually_handled = $data['manually_handled'] ?? 'no';
+        $by_admin = $data['by_admin'] ?? 'no';
+        $admincomment = $data['admincomment'] ?? '';
 
-        if ($data['flagged'] == 'true') {
-            if($data['admincomment'] == '') return "Please, add comment";
-            $flagged = 'yes';
-        } else {
-            $flagged = 'no';
-        }
-        
-        if ($data['manually_handled'] == 'true') {
-            $manually_handled = 'yes';
-        } else {
-            $manually_handled = 'no';
-        }
+        $distance_model = Distance::firstOrNew([
+            'job_id' => $jobid
+        ]);
 
-        if ($data['by_admin'] == 'true') {
-            $by_admin = 'yes';
-        } else {
-            $by_admin = 'no';
-        }
+        $distance_model->distance = $distance;
+        $distance_model->time = $time;
+        $distance_model->save();
 
-        if (isset($data['admincomment']) && $data['admincomment'] != "") {
-            $admincomment = $data['admincomment'];
-        } else {
-            $admincomment = "";
-        }
-        if ($time || $distance) {
+        $job_model = Job::firstOrNew([
+            'id' => $jobid
+        ]);
 
-            $affectedRows = Distance::where('job_id', '=', $jobid)->update(array('distance' => $distance, 'time' => $time));
-        }
-
-        if ($admincomment || $session || $flagged || $manually_handled || $by_admin) {
-
-            $affectedRows1 = Job::where('id', '=', $jobid)->update(array('admin_comments' => $admincomment, 'flagged' => $flagged, 'session_time' => $session, 'manually_handled' => $manually_handled, 'by_admin' => $by_admin));
-
-        }
+        $job_model->admin_comments = $admincomment;
+        $job_model->flagged = $flagged;
+        $job_model->session_time = $session;
+        $job_model->manually_handled = $manually_handled;
+        $job_model->by_admin = $by_admin;
+        $job_model->save();
 
         return response('Record updated!');
     }
@@ -290,5 +264,5 @@ class BookingController extends Controller
             return response(['success' => $e->getMessage()]);
         }
     }
-
+    
 }
